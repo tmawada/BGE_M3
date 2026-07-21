@@ -1,0 +1,22 @@
+model_name: BAAI/bge-m3
+
+batch_size: 32
+
+max_length: 512
+
+top_k: 10
+
+device: cuda
+
+normalize_embeddings: true
+
+use_fp16: true
+
+dataset_name: miracl/miracl
+corpus_name: miracl/miracl-corpus
+language: id
+
+data_dir: data
+embeddings_dir: embeddings
+faiss_dir: faiss
+evaluation_dir: evaluation
