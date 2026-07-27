@@ -13,10 +13,21 @@ normalize_embeddings: true
 use_fp16: true
 
 dataset_name: miracl/miracl
-corpus_name: miracl/miracl-corpus
 language: id
+split: dev
 
 data_dir: data
 embeddings_dir: embeddings
 faiss_dir: faiss
 evaluation_dir: evaluation
+
+# Inference settings
+outputs_dir: outputs
+save_embedding: true
+embedding_precision: float32
+
+# Retrieval UI settings
+top_k: 5
+show_similarity_score: true
+show_document_text: true
+show_document_title: true

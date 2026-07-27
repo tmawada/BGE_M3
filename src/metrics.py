@@ -14,7 +14,7 @@ def _build_qrels_dict(qrels: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
     """Convert qrels list to a nested dictionary for fast lookup.
 
     Args:
-        qrels: List of {"query_id": str, "doc_id": str, "relevance": int}.
+        qrels: List of {"query_id": str, "relevant_doc": str}.
 
     Returns:
         Dict mapping query_id -> {doc_id: relevance_score}.
@@ -22,8 +22,8 @@ def _build_qrels_dict(qrels: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
     qrels_dict: Dict[str, Dict[str, int]] = {}
     for entry in qrels:
         qid = entry["query_id"]
-        did = entry["doc_id"]
-        rel = entry.get("relevance", 1)
+        did = entry["relevant_doc"]
+        rel = 1
         if qid not in qrels_dict:
             qrels_dict[qid] = {}
         qrels_dict[qid][did] = rel

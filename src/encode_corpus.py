@@ -24,7 +24,7 @@ def encode_corpus(
     """Generate dense embeddings for all corpus documents.
 
     Args:
-        corpus: List of {"doc_id": str, "text": str} dictionaries.
+        corpus: List of {"doc_id": str, "passage": str} dictionaries.
         encoder: An Encoder instance with an .encode() method.
         config: Configuration dictionary with embedding parameters.
 
@@ -40,7 +40,7 @@ def encode_corpus(
         print(f"[INFO] Corpus embeddings already exist at {embeddings_path}, loading from disk.")
         return np.load(str(embeddings_path))
 
-    texts = [doc["text"] for doc in corpus]
+    texts = [doc["passage"] for doc in corpus]
     doc_ids = [doc["doc_id"] for doc in corpus]
 
     batch_size = config.get("batch_size", 32)
