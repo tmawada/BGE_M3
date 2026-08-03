@@ -1,0 +1,99 @@
+# ============================================================
+# BGE-M3 + LoRA Adapter Pipeline Configuration
+# ============================================================
+
+# Base model
+model_name: BAAI/bge-m3
+
+batch_size: 32
+max_length: 512
+top_k: 10
+device: cuda
+normalize_embeddings: true
+use_fp16: true
+
+# Dataset
+dataset_name: miracl/miracl
+language: id
+split: dev
+
+# Directories
+data_dir: data
+embeddings_dir: embeddings
+faiss_dir: faiss
+evaluation_dir: evaluation
+
+# ============================================================
+# Adapter Configuration
+# ============================================================
+
+# Set to true to load adapter weights on top of the base model
+use_adapter: false
+
+# Path to saved adapter weights (after training)
+adapter_path: adapters/bge-m3-lora
+
+# LoRA hyperparameters
+adapter:
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules:
+    - q_proj
+    - v_proj
+    - k_proj
+
+# ============================================================
+# Training Configuration
+# ============================================================
+
+training:
+  # Number of training epochs
+  epochs: 3
+
+  # Training batch size (per device)
+  train_batch_size: 16
+
+  # Learning rate for adapter parameters
+  learning_rate: 2.0e-5
+
+  # Warmup ratio (fraction of total steps)
+  warmup_ratio: 0.1
+
+  # Weight decay
+  weight_decay: 0.01
+
+  # Temperature for InfoNCE contrastive loss
+  temperature: 0.05
+
+  # Number of hard negatives per query
+  num_hard_negatives: 7
+
+  # Max gradient norm for clipping
+  max_grad_norm: 1.0
+
+  # Logging interval (steps)
+  log_every: 50
+
+  # Evaluation interval (steps), 0 = evaluate only at end of epoch
+  eval_every: 0
+
+  # Save directory for adapter checkpoints
+  output_dir: adapters/bge-m3-lora
+
+  # Random seed
+  seed: 42
+
+# ============================================================
+# Inference settings
+# ============================================================
+outputs_dir: outputs
+save_embedding: true
+embedding_precision: float32
+
+# ============================================================
+# Retrieval UI settings
+# ============================================================
+show_similarity_score: true
+show_document_text: true
+show_document_title: true
