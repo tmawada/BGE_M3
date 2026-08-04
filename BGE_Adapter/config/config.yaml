@@ -38,10 +38,12 @@ adapter:
   lora_r: 16
   lora_alpha: 32
   lora_dropout: 0.1
+  # BGE-M3 is XLM-RoBERTa: attention projections are named query/key/value
+  # (NOT the LLaMA-style q_proj/k_proj/v_proj)
   target_modules:
-    - q_proj
-    - v_proj
-    - k_proj
+    - query
+    - key
+    - value
 
 # ============================================================
 # Training Configuration

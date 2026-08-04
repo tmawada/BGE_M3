@@ -11,10 +11,59 @@ the `use_adapter` flag in config.yaml.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Protocol
 
 import numpy as np
 import torch
+
+# PEFT weight filenames, in the order PeftModel.from_pretrained looks for them.
+_ADAPTER_WEIGHT_FILES = ("adapter_model.safetensors", "adapter_model.bin")
+
+
+def _verify_local_adapter(adapter_path: str) -> None:
+    """Fail fast when `adapter_path` looks local but has no trained weights.
+
+    PEFT silently falls back to downloading from the HuggingFace Hub when the
+    weight file is missing, which surfaces as a confusing 401 / repo-not-found
+    error for what is really an untrained adapter.
+
+    Args:
+        adapter_path: Path (or Hub repo id) passed to PeftModel.from_pretrained.
+
+    Raises:
+        FileNotFoundError: If the directory exists but holds no adapter weights,
+            or if the path was clearly meant to be local but does not exist.
+    """
+    path = Path(adapter_path)
+
+    # A bare "org/repo" style id that isn't on disk is a legitimate Hub ref,
+    # but if its parent directory exists locally the path was meant to be local.
+    if not path.exists():
+        looks_local = (
+            path.is_absolute()
+            or adapter_path.startswith((".", "/", "\\"))
+            or path.parent.is_dir()
+        )
+        if looks_local:
+            raise FileNotFoundError(
+                f"Adapter path '{adapter_path}' does not exist. "
+                f"Train an adapter first: python -m src.train_adapter"
+            )
+        return
+
+    if any((path / name).is_file() for name in _ADAPTER_WEIGHT_FILES):
+        return
+
+    found = sorted(p.name for p in path.iterdir()) or ["<empty>"]
+    raise FileNotFoundError(
+        f"No adapter weights in '{adapter_path}': expected one of "
+        f"{', '.join(_ADAPTER_WEIGHT_FILES)}, found: {', '.join(found)}.\n"
+        f"The adapter has not been trained yet. Either run\n"
+        f"    python -m src.train_adapter\n"
+        f"to produce the weights, or set 'use_adapter: false' in "
+        f"config/config.yaml to use the baseline BGE-M3 model."
+    )
 
 
 class Encoder(Protocol):
@@ -150,6 +199,7 @@ class BGEM3AdapterEncoder:
 
         # Load LoRA adapter on top
         print(f"[INFO] Loading LoRA adapter from '{adapter_path}'...")
+        _verify_local_adapter(adapter_path)
         self.model = PeftModel.from_pretrained(base_model, adapter_path)
         self.model = self.model.to(device)
         self.model.eval()
