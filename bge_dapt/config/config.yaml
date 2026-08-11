@@ -1,0 +1,89 @@
+# =========================================================
+#  BGE + DAPT — Project Configuration
+#
+#  Pipeline:
+#      BAAI/bge-m3
+#          |
+#          v  Stage 1: Domain-Adaptive Pretraining (MLM)
+#      models/bge-m3-dapt
+#          |
+#          v  Stage 2: Retrieval Fine-tuning (MIRACL, MNRL)
+#      models/bge-m3-dapt-retriever
+# =========================================================
+
+# ---- General ----
+seed: 42
+device: cuda
+use_fp16: true
+
+# ---- Checkpoints ----
+base_model_name: BAAI/bge-m3
+dapt_model_dir: models/bge-m3-dapt
+retriever_model_dir: models/bge-m3-dapt-retriever
+
+# ---- Directory layout ----
+data_dir: data
+outputs_dir: outputs
+embeddings_dir: outputs/embeddings
+faiss_dir: outputs/faiss
+evaluation_dir: outputs
+
+# =========================================================
+#  Stage 1 — Domain-Adaptive Pretraining (MLM)
+# =========================================================
+dapt:
+  # Indonesian e-commerce review corpus (columns: name, review, rating)
+  data_path: data/master.csv
+  dataset_path: data/dapt_dataset.json
+
+  # 'name' and 'review' are merged into one MLM sample (rating is ignored)
+  text_columns: [name, review]
+  max_samples: null            # optional cap for quick tests (null = all samples)
+
+  mlm_probability: 0.15
+  max_length: 256
+  epochs: 3
+  batch_size: 8
+  learning_rate: 2e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  fp16: true
+  logging_steps: 50
+  eval_ratio: 0.02             # held-out split for eval_loss tracking
+  save_strategy: epoch         # epoch | steps | no
+  save_total_limit: 2
+
+# =========================================================
+#  Stage 2 — Retrieval Fine-tuning (MIRACL Indonesian)
+# =========================================================
+retrieval:
+  # MIRACL Indonesian dataset (reuses baseline_bge normalized files)
+  corpus_path: data/corpus.json
+  queries_path: data/queries.json
+  qrels_path: data/qrels.json
+  dataset_path: data/miracl_pairs.json
+
+  max_length: 256
+  epochs: 3
+  batch_size: 32
+  learning_rate: 2e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  gradient_accumulation_steps: 1
+  fp16: true
+  temperature: 0.02            # MultipleNegativesRankingLoss / InfoNCE scale
+  eval_batch_size: 64
+  top_k: 10
+  evaluate_every_epoch: true   # FAISS retrieval evaluation after each epoch
+  use_cached_embeddings: false # reuse saved corpus/query embeddings if present
+
+# =========================================================
+#  Interactive Retrieval (src/retrieval)
+# =========================================================
+top_k: 5
+normalize_embeddings: true
+show_similarity_score: true
+show_document_text: true
+show_document_title: true

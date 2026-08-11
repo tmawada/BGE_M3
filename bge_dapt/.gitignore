@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# Checkpoints / models
+models/
+outputs/
+
+# Data artifacts
+data/*.json
+data/*.jsonl
+data/*.tsv
+data/*.csv
+
+# HuggingFace cache
+.cache/
