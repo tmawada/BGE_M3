@@ -1,0 +1,135 @@
+# =========================================================
+#  BGE + DAPT + LoRA Adapter — Project Configuration
+#
+#  Pipeline:
+#      BAAI/bge-m3
+#          |
+#          v  Stage 1: Domain-Adaptive Pretraining (MLM)
+#      models/bge-m3-dapt
+#          |
+#          v  Stage 2: LoRA adapter training (MIRACL, InfoNCE)
+#      adapters/bge-m3-dapt-lora
+#          |
+#          v  Stage 3: Encode / retrieve / evaluate
+#      evaluation/results.json
+# =========================================================
+
+# ---- General ----
+seed: 42
+device: cuda
+use_fp16: true
+
+# ---- Checkpoints ----
+base_model_name: BAAI/bge-m3
+dapt_model_dir: models/bge-m3-dapt
+adapter_path: adapters/bge-m3-dapt-lora
+
+# Use adapter weights on top of the DAPT checkpoint for encode/eval steps
+use_adapter: true
+
+# ---- Encoding / retrieval ----
+# Encoding has no backprop, so the encode batch is decoupled from training.
+batch_size: 32
+max_length: 128
+top_k: 10
+normalize_embeddings: true
+
+# ---- Directory layout ----
+data_dir: data
+outputs_dir: outputs
+embeddings_dir: embeddings
+faiss_dir: faiss
+evaluation_dir: evaluation
+
+# Directories used only for hard-negative mining (vanilla model, separate
+# from the adapter-stage embeddings so caches never collide).
+mining_embeddings_dir: embeddings_mining
+mining_faiss_dir: faiss_mining
+
+# =========================================================
+#  Stage 1 — Domain-Adaptive Pretraining (MLM)
+# =========================================================
+dapt:
+  # Indonesian e-commerce review corpus (columns: name, review, rating)
+  data_path: data/master.csv
+  dataset_path: data/dapt_dataset.json
+
+  # 'name' and 'review' are merged into one MLM sample (rating is ignored)
+  text_columns: [name, review]
+  max_samples: null            # optional cap for quick tests (null = all samples)
+
+  mlm_probability: 0.15
+  max_length: 128
+  epochs: 3
+  batch_size: 8
+  learning_rate: 2e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  fp16: true
+  logging_steps: 50
+  eval_ratio: 0.02             # held-out split for eval_loss tracking
+  save_strategy: epoch         # epoch | steps | no
+  save_total_limit: 2
+
+# =========================================================
+#  Stage 2 — LoRA Adapter Training (MIRACL)
+# =========================================================
+training:
+  # Number of training epochs
+  epochs: 3
+
+  # Training batch size (per device)
+  train_batch_size: 8
+
+  # Learning rate for adapter parameters
+  learning_rate: 2.0e-5
+
+  # Warmup ratio (fraction of total steps)
+  warmup_ratio: 0.1
+
+  # Weight decay
+  weight_decay: 0.01
+
+  # Temperature for InfoNCE contrastive loss
+  temperature: 0.05
+
+  # Number of hard negatives per query (raised to compensate for the
+  # smaller in-batch negatives at batch size 8)
+  num_hard_negatives: 15
+
+  # Max gradient norm for clipping
+  max_grad_norm: 1.0
+
+  # Logging interval (steps)
+  log_every: 50
+
+  # Parallel data loading workers
+  num_workers: 4
+
+  # Save directory for adapter checkpoints
+  output_dir: adapters/bge-m3-dapt-lora
+
+  # Random seed
+  seed: 42
+
+# =========================================================
+#  LoRA Adapter Configuration
+# =========================================================
+adapter:
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  # BGE-M3 is XLM-RoBERTa: attention projections are named query/key/value
+  target_modules:
+    - query
+    - key
+    - value
+
+# =========================================================
+#  Retrieval UI settings
+# =========================================================
+show_similarity_score: true
+show_document_text: true
+show_document_title: true

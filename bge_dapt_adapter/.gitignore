@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# Checkpoints / models
+models/
+outputs/
+adapters/
+
+# Embeddings / indices
+embeddings/
+embeddings_mining/
+faiss/
+faiss_mining/
+evaluation/
+
+# Data artifacts
+data/*.json
+data/*.jsonl
+data/*.tsv
+data/*.csv
+data/*.pt
+
+# HuggingFace cache
+.cache/
