@@ -3,11 +3,11 @@ __pycache__/
 *.pyo
 
 # Checkpoints / models
-*models/
-*outputs/
+**/models/
+**/outputs/
 
 # Data artifacts
-*data/
+**/data/
 data/*.json
 data/*.jsonl
 data/*.tsv
