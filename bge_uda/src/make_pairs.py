@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 import numpy as np
 from tqdm import tqdm
 
-from .dataset import load_corpus, load_pairs, load_qrels
+from .dataset import load_corpus, load_pairs, load_qrels, split_pairs
 
 
 def _repo_root() -> Path:
@@ -47,9 +47,9 @@ def mine_negatives_with_index(index, qvecs: np.ndarray, qids: List[str],
 
 
 def prepare_training_data(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Join pairs + qrels + corpus + mined negs -> training_pairs.json."""
-    from .encode import _out_dir  # reuse embeddings cache location
-    from .index import load_index
+    """Join TRAIN-split pairs + qrels + corpus + mined negs -> training_pairs.json."""
+    from .encode import _out_dir, encoder_tag  # reuse embeddings cache location
+    from .index import build_index
 
     data_dir = Path(config.get("data_dir", "data"))
     if not data_dir.is_absolute():
@@ -57,6 +57,7 @@ def prepare_training_data(config: Dict[str, Any]) -> List[Dict[str, Any]]:
     out_path = data_dir / "training_pairs.json"
     if out_path.exists():  # cache: deterministic build, safe to reuse
         print(f"[INFO] Reusing {out_path}")
+        print("[HINT] Delete it + pair_split.json to rebuild on a new train split.")
         return json.loads(out_path.read_text(encoding="utf-8"))
 
     tr_cfg = config.get("training", {})
@@ -70,21 +71,27 @@ def prepare_training_data(config: Dict[str, Any]) -> List[Dict[str, Any]]:
     gold: Dict[str, set] = {}  # qid -> {gold doc ids} from formal qrels
     for r in load_qrels(config):
         gold.setdefault(str(r["query_id"]), set()).add(str(r["relevant_doc"]))
-    pairs = load_pairs(config)  # your 4072 informal/formal rows
+    all_pairs = load_pairs(config)
+    train_pairs, held_pairs = split_pairs(all_pairs, config)
+    pairs = train_pairs  # TRAIN ONLY — held-out reserved for eval
+    print(f"[INFO] Mining from train split: {len(pairs)} train / {len(held_pairs)} held-out")
 
-    # Encode INFORMAL queries with current base model to mine their hard negs.
+    # Encode INFORMAL queries + corpus with the SAME encoder (same space).
     from .model import load_model
     encoder = load_model(config)  # respects model_name (use DAPT ckpt here!)
+    tag = encoder_tag(config)
     informal_texts = [p["informal"] for p in pairs]
     informal_qids = [p["query_id"] for p in pairs]
     print(f"[INFO] Encoding {len(informal_texts)} informal queries for mining...")
     qvecs = encoder.encode(informal_texts, config.get("batch_size", 32),
                            config.get("max_length", 512), config.get("normalize_embeddings", True))
 
-    # Corpus ids come from the baseline encode step's cache file.
+    # Per-encoder corpus vectors + index (rebuild if missing).
+    from .encode import encode_corpus
+    cvecs = encode_corpus(corpus, encoder, config)
     emb_dir = _out_dir(config)
-    corpus_ids = json.loads((emb_dir / "corpus_ids.json").read_text(encoding="utf-8"))
-    index = load_index(config)
+    corpus_ids = json.loads((emb_dir / f"corpus_{tag}_ids.json").read_text(encoding="utf-8"))
+    index = build_index(cvecs, config)
     neg_map = mine_negatives_with_index(index, qvecs, informal_qids, corpus_ids, gold, num_negs, extra)
 
     # Assemble triplets: informal query + formal's gold passage + hard negs.

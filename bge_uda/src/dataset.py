@@ -149,3 +149,71 @@ def load_pairs(config: Dict[str, Any]) -> List[Dict[str, str]]:
 def load_all(config: Dict[str, Any]) -> Tuple[List, List, List]:
     """Convenience: load corpus + formal queries + qrels together."""
     return load_corpus(config), load_queries(config), load_qrels(config)
+
+
+def _split_path(config: Dict[str, Any]) -> Path:
+    """Resolve persisted pair-split JSON (train vs held-out qids)."""
+    p = Path(config.get("split", {}).get("split_file", "../data/pair_split.json"))
+    if not p.is_absolute():
+        p = (Path(__file__).resolve().parent.parent / p).resolve()
+    return p
+
+
+def split_pairs(pairs: List[Dict[str, str]], config: Dict[str, Any],
+                force: bool = False) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    """Deterministic train/held-out split by query_id (persisted to disk).
+
+    Fixes train-on-test leakage: mining + LoRA + DAPT must use train only,
+    eval_informal/eval_sim must use held-out only.
+    """
+    import hashlib
+    import json
+
+    scfg = config.get("split", {})
+    ratio = float(scfg.get("held_out_ratio", 0.15))
+    seed = int(scfg.get("seed", 42))
+    spath = _split_path(config)
+    if not force and spath.exists():
+        try:
+            saved = json.loads(spath.read_text(encoding="utf-8"))
+            train_ids = set(map(str, saved.get("train_ids", [])))
+            held_ids = set(map(str, saved.get("held_out_ids", [])))
+            by_id = {str(p["query_id"]): p for p in pairs}
+            # Only reuse if split covers exactly the current pair ids.
+            if train_ids | held_ids == set(by_id) and not (train_ids & held_ids):
+                train = [by_id[i] for i in saved["train_ids"] if i in by_id]
+                held = [by_id[i] for i in saved["held_out_ids"] if i in by_id]
+                print(f"[INFO] Reusing split {spath}: {len(train)} train / {len(held)} held-out")
+                return train, held
+            print(f"[WARNING] Split {spath} stale (pair ids changed) -> re-split.")
+        except Exception as e:
+            print(f"[WARNING] Could not load split {spath} ({e}) -> re-split.")
+
+    # Deterministic hash-based split: stable across runs/machines, no sklearn needed.
+    train, held = [], []
+    for p in pairs:
+        qid = str(p["query_id"])
+        h = int(hashlib.sha256(f"{seed}:{qid}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+        (held if h < ratio else train).append(p)
+    # Guard against degenerate splits on tiny inputs.
+    if not train or not held:
+        n_held = max(1, int(len(pairs) * ratio)) if len(pairs) > 1 else 0
+        ordered = sorted(pairs, key=lambda p: str(p["query_id"]))
+        held, train = ordered[:n_held], ordered[n_held:]
+    try:
+        spath.parent.mkdir(parents=True, exist_ok=True)
+        spath.write_text(json.dumps({
+            "seed": seed, "held_out_ratio": ratio,
+            "train_ids": [str(p["query_id"]) for p in train],
+            "held_out_ids": [str(p["query_id"]) for p in held],
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[INFO] Wrote split {len(train)} train / {len(held)} held-out -> {spath}")
+    except Exception as e:
+        print(f"[WARNING] Could not persist split ({e}); using in-memory split.")
+    return train, held
+
+
+def filter_qrels(qrels: List[Dict[str, str]], qids: List[str]) -> List[Dict[str, str]]:
+    """Keep only qrels for the given qids (avoids missing-result deflation)."""
+    keep = set(map(str, qids))
+    return [r for r in qrels if str(r["query_id"]) in keep]

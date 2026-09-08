@@ -31,9 +31,23 @@ evaluation_dir: evaluation
 outputs_dir: outputs
 
 # --- Retrieval / evaluation ---
-top_k: 5
+# NOTE: must be >= max K reported (Recall@10/nDCG@10). 5 silently capped @10 metrics.
+top_k: 10
 save_embedding: true
 embedding_precision: float32   # float16 | float32 | float64 (inference demo only)
+
+# --- Train / held-out split (fixes train-on-test leakage) ---
+# Mining + LoRA + DAPT use train split only; eval_informal/eval_sim use held-out only.
+split:
+  held_out_ratio: 0.15   # e.g. 4071 -> ~3460 train / ~611 held-out
+  seed: 42
+  split_file: ../data/pair_split.json  # persisted {train_ids, held_out_ids}
+
+# --- Embedding-similarity eval (informal ~= formal claim) ---
+similarity:
+  n_random: 10       # random formal_j per informal_i for uniformity control
+  seed: 42
+  temperature: 0.05  # frozen InfoNCE-eval temperature (same as training)
 
 # --- DAPT (Stage 1: unsupervised MLM on corpus + pairs) ---
 dapt:

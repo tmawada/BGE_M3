@@ -74,8 +74,20 @@ def ndcg_at_k(results: Dict[str, List[str]], qrels: List[Dict[str, str]], k: int
     return sum(scores) / len(scores) if scores else 0.0
 
 
-def evaluate_all(results: Dict[str, List[str]], qrels: List[Dict[str, str]]) -> Dict[str, float]:
-    """Compute the standard 5-metric set in one call."""
+def evaluate_all(results: Dict[str, List[str]], qrels: List[Dict[str, str]],
+                 qids: List[str] | None = None) -> Dict[str, float]:
+    """Compute the standard 5-metric set in one call.
+
+    If qids is given, score only those queries (required for held-out eval;
+    otherwise unevaluated qrels count as 0 and deflate scores).
+    """
+    if qids is not None:
+        keep = set(map(str, qids))
+        qrels = [r for r in qrels if str(r["query_id"]) in keep]
+    depth = max((len(v) for v in results.values()), default=0)
+    if depth and depth < 10:
+        print(f"[WARNING] Retrieved depth {depth} < 10: "
+              f"Recall@10/nDCG@10 are capped. Set top_k >= 10 (current depth={depth}).")
     return {"Recall@1": recall_at_k(results, qrels, 1), "Recall@5": recall_at_k(results, qrels, 5),
             "Recall@10": recall_at_k(results, qrels, 10), "MRR": mrr(results, qrels),
             "nDCG@10": ndcg_at_k(results, qrels, 10)}

@@ -12,22 +12,31 @@ from typing import Any, Dict, List
 from .dataset import load_corpus, load_pairs
 
 
-def make_dapt_corpus(config: Dict[str, Any]) -> Path:
-    """Merge corpus passages + formal + informal texts -> dapt_corpus.txt."""
+def make_dapt_corpus(config: Dict[str, Any], train_only: bool = True) -> Path:
+    """Merge corpus passages + TRAIN formal/informal texts -> dapt_corpus.txt."""
     dapt_cfg = config.get("dapt", {})
     out_path = Path(dapt_cfg.get("corpus_txt", "data/dapt_corpus.txt"))
     if not out_path.is_absolute():  # resolve inside repo
         out_path = Path(__file__).resolve().parent.parent / out_path
     if out_path.exists():  # reuse: file build is deterministic
         print(f"[INFO] Reusing DAPT corpus: {out_path}")
+        print("[HINT] Delete it to rebuild (e.g. after changing the train split).")
         return out_path
     lines: List[str] = []
     # 1) All MIRACL passages = domain knowledge (formal Indonesian).
     for doc in load_corpus(config):
         if doc["passage"].strip():
             lines.append(doc["passage"].strip())
-    # 2) Both sides of your pairs = register coverage (formal + informal).
-    for p in load_pairs(config):
+    # 2) TRAIN sides only — held-out queries must never leak into MLM.
+    pairs = load_pairs(config)
+    if train_only:
+        try:
+            from .dataset import split_pairs
+            pairs, held = split_pairs(pairs, config)
+            print(f"[INFO] DAPT on train split: {len(pairs)} train (held-out {len(held)} excluded)")
+        except Exception as e:
+            print(f"[WARNING] split failed ({e}); using all pairs for DAPT.")
+    for p in pairs:
         if p["formal"].strip():
             lines.append(p["formal"].strip())
         if p["informal"].strip():
@@ -39,7 +48,7 @@ def make_dapt_corpus(config: Dict[str, Any]) -> Path:
     return out_path
 
 
-def run_dapt_mlm(config: Dict[str, Any]) -> str:
+def run_dapt_mlm(config: Dict[str, Any], train_only: bool = True) -> str:
     """Run HuggingFace masked-LM training, save to dapt.output_dir."""
     from transformers import (AutoModelForMaskedLM, AutoTokenizer, DataCollatorForLanguageModeling,
                               Trainer, TrainingArguments)
@@ -57,7 +66,7 @@ def run_dapt_mlm(config: Dict[str, Any]) -> str:
     max_len = int(dapt.get("max_length", 512))
     seed = int(dapt.get("seed", 42))
 
-    txt_path = make_dapt_corpus(config)  # ensure corpus file exists first
+    txt_path = make_dapt_corpus(config, train_only=train_only)  # train split only
     print(f"[INFO] DAPT base={base} -> {out_dir}")
     tok = AutoTokenizer.from_pretrained(base)
     model = AutoModelForMaskedLM.from_pretrained(base)  # MLM head added on XLM-R
