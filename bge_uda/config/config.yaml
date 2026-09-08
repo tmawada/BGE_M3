@@ -1,0 +1,69 @@
+# ============================================================
+# BGE-UDA : Unsupervised Embedding Adaptation for BGE-M3
+# ONE config file controls everything. Edit here, not in code.
+# ============================================================
+
+# --- Base model ---
+# HuggingFace ID or local path. After DAPT, point to dapt.output_dir.
+model_name: BAAI/bge-m3
+device: cuda            # "cuda" or "cpu" (auto-falls back to cpu)
+use_fp16: true          # fp16 only on cuda; forced False on cpu
+use_adapter: false      # true => load LoRA adapter on top (after training)
+adapter_path: adapters/bge-m3-lora
+
+# --- Encoding (applies to corpus + queries) ---
+batch_size: 32
+max_length: 512
+normalize_embeddings: true   # L2-norm => inner-product == cosine
+
+# --- Data locations ---
+# Tip: points at your existing MIRACL files so you don't copy data.
+data_dir: ../data
+train_pairs_csv: ../data/train_pairs.csv  # columns: query_id,formal,informal
+corpus_jsonl: corpus.jsonl   # filenames inside data_dir
+query_tsv: query.tsv
+qrels_tsv: qrels.tsv
+
+# --- Output folders (created automatically, relative to BGE_UDA/) ---
+embeddings_dir: embeddings
+faiss_dir: faiss
+evaluation_dir: evaluation
+outputs_dir: outputs
+
+# --- Retrieval / evaluation ---
+top_k: 5
+save_embedding: true
+embedding_precision: float32   # float16 | float32 | float64 (inference demo only)
+
+# --- DAPT (Stage 1: unsupervised MLM on corpus + pairs) ---
+dapt:
+  output_dir: models/bge-m3-dapt
+  epochs: 3
+  batch_size: 32
+  learning_rate: 5.0e-5
+  mlm_probability: 0.15
+  max_length: 512
+  seed: 42
+
+# --- LoRA adapter shape (Stage 2) ---
+adapter:
+  lora_r: 16  # r = Rank -> Intinya dim dari adapter
+  lora_alpha: 32 # Scaling Factor dari adapter
+  lora_dropout: 0.1
+  # BGE-M3 backbone is XLM-RoBERTa, so attention layers are query/key/value.
+  target_modules: [query, key, value]
+
+# --- Contrastive training (Stage 2: informal -> formal doc) ---
+training:
+  epochs: 3
+  train_batch_size: 16
+  learning_rate: 2.0e-5
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  temperature: 0.05       # InfoNCE temperature
+  num_hard_negatives: 7   # hard negs mined from FAISS per query
+  search_k_extra: 50      # fetch top (negs+extra), skip positives
+  max_grad_norm: 1.0
+  log_every: 50
+  output_dir: adapters/bge-m3-lora
+  seed: 42
